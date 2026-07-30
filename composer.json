@@ -1,0 +1,23 @@
+{
+    "name": "seo-auditor/app",
+    "description": "SEO Аудитор — автоматизированный аудит сайтов",
+    "type": "project",
+    "require": {
+        "php": ">=8.1",
+        "guzzlehttp/guzzle": "^7.8",
+        "symfony/dom-crawler": "^7.0",
+        "symfony/css-selector": "^7.0",
+        "mpdf/mpdf": "^8.2",
+        "phpmailer/phpmailer": "^6.9",
+        "monolog/monolog": "^3.6",
+        "ramsey/uuid": "^4.7"
+    },
+    "autoload": {
+        "psr-4": {
+            "SeoAuditor\\": "src/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

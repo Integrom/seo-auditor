@@ -1,0 +1,28 @@
+# Секреты и локальная конфигурация
+.env
+.env.local
+
+# Зависимости
+/vendor/
+
+# Сгенерированные отчёты и логи
+/reports/
+/logs/
+*.log
+
+# Скриншоты и артефакты отладки
+*.png
+*.jpg
+/.playwright-mcp/
+
+# Служебные файлы MCP и IDE
+.mcp.json
+run-context7-mcp.ps1
+.idea/
+.vscode/
+*.swp
+
+# Системные файлы
+Thumbs.db
+desktop.ini
+.DS_Store

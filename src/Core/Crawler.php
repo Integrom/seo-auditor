@@ -21,7 +21,14 @@ class Crawler
         $this->maxPages = Config::get('crawler.max_pages', 100);
         $this->client   = new Client([
             'timeout'         => Config::get('crawler.timeout', 10),
-            'allow_redirects' => ['max' => 5, 'track_redirects' => true],
+            'allow_redirects' => [
+                'max'             => 5,
+                'track_redirects' => true,
+                // Редирект тоже может увести во внутреннюю сеть — проверяем каждый шаг
+                'on_redirect'     => function ($request, $response, $uri) {
+                    UrlGuard::assert((string) $uri);
+                },
+            ],
             'verify'          => false,
             'headers'         => [
                 'User-Agent' => Config::get('crawler.user_agent', 'SeoAuditorBot/1.0'),
@@ -32,6 +39,8 @@ class Crawler
 
     public function crawl(string $startUrl, callable $onPage = null): array
     {
+        UrlGuard::assert($startUrl);
+
         $parsed         = parse_url($startUrl);
         $this->baseHost = $parsed['host'];
         $this->baseUrl  = $parsed['scheme'] . '://' . $parsed['host'];
@@ -94,7 +103,9 @@ class Crawler
                     if ($this->isSameDomain($loc)) {
                         $this->enqueue($this->normalizeUrl($loc));
                     } elseif (str_ends_with($loc, '.xml')) {
-                        // вложенный sitemap — парсим рекурсивно
+                        // вложенный sitemap — парсим рекурсивно.
+                        // Может указывать на чужой хост, поэтому проверяем адрес
+                        if (!UrlGuard::isAllowed($loc)) continue;
                         try {
                             $sub = $this->client->get($loc, ['timeout' => 8, 'http_errors' => false]);
                             if ($sub->getStatusCode() === 200) {
@@ -115,6 +126,7 @@ class Crawler
     public function fetchPage(string $url): ?array
     {
         try {
+            UrlGuard::assert($url);
             $start    = microtime(true);
             $response = $this->client->get($url);
             $time     = round((microtime(true) - $start) * 1000);
@@ -143,6 +155,10 @@ class Crawler
                 'size_bytes'  => 0,
                 'error'       => $e->getMessage(),
             ];
+        } catch (\RuntimeException $e) {
+            // Ссылка ведёт на запрещённый адрес — пропускаем страницу, аудит продолжается
+            error_log("[Crawler] пропущен $url: " . $e->getMessage());
+            return null;
         }
     }
 

@@ -2,6 +2,7 @@
 namespace SeoAuditor\Checks;
 
 use GuzzleHttp\Client;
+use SeoAuditor\Core\RobotsTxt;
 
 /**
  * Проверка готовности сайта к AI-поиску (AI Overviews, ChatGPT, Perplexity, Алиса).
@@ -67,17 +68,15 @@ class AiReadinessCheck extends BaseCheck
                 return $blocked;
             }
 
-            $robots = (string)$resp->getBody();
-            $groups = $this->parseRobotsGroups($robots);
+            $robots = new RobotsTxt((string)$resp->getBody());
 
             foreach (self::AI_BOTS as $bot => $label) {
-                $botLower = strtolower($bot);
-                if (isset($groups[$botLower]) && $this->groupBlocksAll($groups[$botLower])) {
+                if ($robots->blocksEverything($bot)) {
                     $blocked[] = "$bot ($label)";
                 }
             }
             // Полная блокировка через User-agent: *
-            $starBlocksAll = isset($groups['*']) && $this->groupBlocksAll($groups['*']);
+            $starBlocksAll = $robots->blocksEverything('*');
 
             if ($starBlocksAll) {
                 $this->critical('ai_readiness', 'robots.txt блокирует всех роботов',
@@ -101,43 +100,6 @@ class AiReadinessCheck extends BaseCheck
             }
         } catch (\Exception $e) {}
         return $blocked;
-    }
-
-    // Разбирает robots.txt на группы user-agent => массив правил disallow
-    private function parseRobotsGroups(string $robots): array
-    {
-        $groups = [];
-        $currentAgents = [];
-        $lastWasAgent  = false;
-        foreach (preg_split('/\r?\n/', $robots) as $line) {
-            $line = trim(preg_replace('/#.*$/', '', $line));
-            if ($line === '') continue;
-            if (preg_match('/^user-agent:\s*(.+)$/i', $line, $m)) {
-                if (!$lastWasAgent) $currentAgents = [];
-                $agent = strtolower(trim($m[1]));
-                $currentAgents[] = $agent;
-                $groups[$agent] = $groups[$agent] ?? [];
-                $lastWasAgent = true;
-            } elseif (preg_match('/^(dis)?allow:\s*(.*)$/i', $line, $m)) {
-                foreach ($currentAgents as $agent) {
-                    $groups[$agent][] = [strtolower($m[1] ?: '') === 'dis' ? 'disallow' : 'allow', trim($m[2])];
-                }
-                $lastWasAgent = false;
-            } else {
-                $lastWasAgent = false;
-            }
-        }
-        return $groups;
-    }
-
-    private function groupBlocksAll(array $rules): bool
-    {
-        $blocksAll = false;
-        foreach ($rules as [$type, $path]) {
-            if ($type === 'disallow' && $path === '/') $blocksAll = true;
-            if ($type === 'allow' && ($path === '/' || $path === '')) return false;
-        }
-        return $blocksAll;
     }
 
     private function checkLlmsTxt(string $base, string $url): bool

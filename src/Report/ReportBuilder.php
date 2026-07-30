@@ -3,6 +3,7 @@ namespace SeoAuditor\Report;
 
 use SeoAuditor\Core\Config;
 use SeoAuditor\Core\Database;
+use SeoAuditor\Report\Score;
 
 class ReportBuilder
 {
@@ -92,16 +93,7 @@ class ReportBuilder
 
     private function calcScore(array $issues): int
     {
-        // Уникальные проблемы (тип + базовый заголовок), формула синхронна с AuditManager::calcScore
-        $groups = [];
-        foreach ($issues as $i) {
-            if (!in_array($i['severity'], ['critical', 'warning'])) continue;
-            $base = trim(preg_replace('/:\s*\d.*$/u', '', $i['title']));
-            $groups[$i['check_type'] . '|' . $i['severity'] . '|' . $base] = $i['severity'];
-        }
-        $crit = count(array_filter($groups, fn($s) => $s === 'critical'));
-        $warn = count($groups) - $crit;
-        return max(0, min(100, 100 - $crit * 12 - $warn * 2));
+        return Score::overall($issues);
     }
 
     public function getScoreColor(int $score): string

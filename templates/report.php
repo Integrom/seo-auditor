@@ -1,5 +1,6 @@
 <?php
 use SeoAuditor\Report\Priority;
+use SeoAuditor\Report\Score;
 
 $grouped = [];
 foreach ($issues as $issue) {
@@ -55,8 +56,8 @@ function countGroupsBySeverity(array $allGroups, array $types, string $sev): int
 function groupIssuesByTitle(array $issues): array {
     $groups = [];
     foreach ($issues as $issue) {
-        $base = trim(preg_replace('/:\s*\d.*$/u', '', $issue['title']));
-        $gkey = $issue['check_type'].'|'.$issue['severity'].'|'.$base;
+        $base = Score::baseTitle($issue['title']);
+        $gkey = Score::groupKey($issue);
         if (!isset($groups[$gkey])) {
             $groups[$gkey] = ['rep'=>$issue,'base'=>$base,'count'=>0,'urls'=>[],'all'=>[]];
         }
@@ -67,9 +68,9 @@ function groupIssuesByTitle(array $issues): array {
     return array_values($groups);
 }
 
-// Здоровье категории 0–100 (по уникальным проблемам; любая критичная выводит из зелёной зоны)
+// Здоровье категории 0–100 — формула в Report\Score
 function categoryHealth(int $crit, int $warn): int {
-    return max(0, min(100, 100 - $crit * 21 - $warn * 5));
+    return Score::category($crit, $warn);
 }
 
 $prevScore = null;

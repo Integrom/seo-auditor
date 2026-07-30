@@ -221,17 +221,7 @@ class AuditManager
 
     private function calcScore(array $issues): int
     {
-        // Считаем уникальные проблемы (тип + базовый заголовок), а не постраничные записи:
-        // одна проблема на 78 страницах — это одна задача, а не 78 штрафов
-        $groups = [];
-        foreach ($issues as $i) {
-            if (!in_array($i['severity'], ['critical', 'warning'])) continue;
-            $base = trim(preg_replace('/:\s*\d.*$/u', '', $i['title']));
-            $groups[$i['check_type'] . '|' . $i['severity'] . '|' . $base] = $i['severity'];
-        }
-        $crit = count(array_filter($groups, fn($s) => $s === 'critical'));
-        $warn = count($groups) - $crit;
-        return max(0, min(100, 100 - $crit * 12 - $warn * 2));
+        return \SeoAuditor\Report\Score::overall($issues);
     }
 
     private function setProgress(int $progress, string $text): void

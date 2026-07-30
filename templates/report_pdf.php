@@ -1,11 +1,11 @@
 <?php
 use SeoAuditor\Report\Priority;
+use SeoAuditor\Report\Score;
 
 // Счётчики — уникальные проблемы (тип + базовый заголовок), не постраничные записи
 $sevGroups = [];
 foreach ($issues as $i) {
-    $base = trim(preg_replace('/:\s*\d.*$/u', '', $i['title']));
-    $sevGroups[$i['check_type'] . '|' . $i['severity'] . '|' . $base] = $i['severity'];
+    $sevGroups[Score::groupKey($i)] = $i['severity'];
 }
 $cntCrit    = count(array_filter($sevGroups, fn($s) => $s === 'critical'));
 $cntWarn    = count(array_filter($sevGroups, fn($s) => $s === 'warning'));
@@ -37,7 +37,7 @@ foreach ($issues as $iss) {
 function pdfGroup(array $list): array {
     $g = [];
     foreach ($list as $i) {
-        $base = trim(preg_replace('/:\s*\d.*$/u', '', $i['title']));
+        $base = Score::baseTitle($i['title']);
         $key  = $i['severity'] . '|' . $base;
         if (!isset($g[$key])) $g[$key] = ['rep'=>$i, 'base'=>$base, 'cnt'=>0, 'urls'=>[]];
         $g[$key]['cnt']++;

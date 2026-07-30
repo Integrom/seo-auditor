@@ -10,6 +10,11 @@
 /logs/
 *.log
 
+# Артефакты тестов
+/.phpunit.cache/
+.phpunit.result.cache
+/coverage/
+
 # Скриншоты и артефакты отладки
 *.png
 *.jpg

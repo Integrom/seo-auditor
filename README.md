@@ -26,10 +26,10 @@
 
 ## Технологический стек
 
-- **Бэкенд:** PHP 8.3, Composer (PSR-4)
+- **Бэкенд:** PHP 8.2+ (для запуска тестов нужен 8.3+), Composer (PSR-4)
 - **БД:** MariaDB 10.11 / MySQL
 - **Фронтенд:** vanilla JavaScript, CSS без фреймворков
-- **Библиотеки:** Guzzle (HTTP), Symfony DomCrawler (парсинг), mPDF (PDF), PHPMailer (почта)
+- **Библиотеки:** Guzzle 8 (HTTP), Symfony DomCrawler 7 (парсинг), mPDF 8 (PDF), PHPMailer 7 (почта)
 - **Инфраструктура:** Nginx, PHP-FPM, Let's Encrypt, Яндекс SmartCaptcha
 
 ## Архитектура
@@ -211,7 +211,7 @@ composer test             # или ./vendor/bin/phpunit
 ./vendor/bin/phpunit --testdox   # с читаемыми названиями проверок
 ```
 
-120 модульных тестов на чистую логику, не требующую сети и БД:
+133 модульных теста на чистую логику, не требующую сети и БД:
 
 | Набор | Что проверяет |
 |---|---|
@@ -259,7 +259,7 @@ public function run(array $pages, array &$siteData): array
 
 ## Установка
 
-Требуется PHP ≥ 8.1, MySQL/MariaDB, Composer.
+Требуется PHP ≥ 8.2 (тесты — 8.3+), MySQL/MariaDB, Composer.
 
 ```bash
 git clone <repository-url> seo-auditor

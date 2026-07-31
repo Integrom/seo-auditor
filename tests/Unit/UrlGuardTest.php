@@ -1,6 +1,7 @@
 <?php
 namespace SeoAuditor\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SeoAuditor\Core\UrlGuard;
 
@@ -11,7 +12,7 @@ class UrlGuardTest extends TestCase
         UrlGuard::resetCache();
     }
 
-    /** @dataProvider внутренниеАдреса */
+    #[DataProvider('внутренниеАдреса')]
     public function testВнутренниеАдресаЗапрещены(string $url, string $чтоПроверяем): void
     {
         $this->assertFalse(UrlGuard::isAllowed($url), $чтоПроверяем);
@@ -35,7 +36,7 @@ class UrlGuardTest extends TestCase
         ];
     }
 
-    /** @dataProvider опасныеСхемы */
+    #[DataProvider('опасныеСхемы')]
     public function testНеHttpСхемыЗапрещены(string $url): void
     {
         $this->assertFalse(UrlGuard::isAllowed($url));

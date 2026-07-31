@@ -205,19 +205,54 @@ if (isset($opts['skip-db'])) {
 
         $rootPass = $opts['db-root-pass'] ?? спросить("Пароль пользователя $rootUser", '', $interactive, true);
 
+        $sql = "CREATE DATABASE IF NOT EXISTS `{$cfg['db_name']}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+             . " CREATE USER IF NOT EXISTS '{$cfg['db_user']}'@'localhost' IDENTIFIED BY '"
+             . addslashes($cfg['db_pass']) . "';"
+             . " GRANT ALL PRIVILEGES ON `{$cfg['db_name']}`.* TO '{$cfg['db_user']}'@'localhost';"
+             . ' FLUSH PRIVILEGES;';
+
+        $created = false;
+        $errors  = [];
+
         try {
             $root = new PDO($dsnNoDb, $rootUser, $rootPass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-            $root->exec("CREATE DATABASE IF NOT EXISTS `{$cfg['db_name']}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-            $root->exec("CREATE USER IF NOT EXISTS '{$cfg['db_user']}'@'localhost' IDENTIFIED BY " . $root->quote($cfg['db_pass']));
-            $root->exec("GRANT ALL PRIVILEGES ON `{$cfg['db_name']}`.* TO '{$cfg['db_user']}'@'localhost'");
-            $root->exec('FLUSH PRIVILEGES');
-            ок("база {$cfg['db_name']} и пользователь {$cfg['db_user']} созданы");
+            $root->exec($sql);
+            $created = true;
+        } catch (PDOException $e2) {
+            $errors[] = 'PDO: ' . $e2->getMessage();
+        }
 
+        /**
+         * Запасной путь через консольный клиент. На многих дистрибутивах
+         * root в MySQL/MariaDB авторизуется плагином unix_socket, который
+         * драйвер PDO не поддерживает, — а клиент mysql с ним работает.
+         */
+        if (!$created && trim((string) shell_exec('command -v mysql 2>/dev/null')) !== '') {
+            $cmd = 'mysql --user=' . escapeshellarg($rootUser);
+            if ($rootPass !== '') $cmd .= ' --password=' . escapeshellarg($rootPass);
+            $cmd .= ' --execute=' . escapeshellarg($sql) . ' 2>&1';
+
+            $output = (string) shell_exec($cmd);
+            if (trim($output) === '') {
+                $created = true;
+                ок('база создана через консольный клиент mysql');
+            } else {
+                $errors[] = 'mysql: ' . trim($output);
+            }
+        }
+
+        if (!$created) {
+            провал("не удалось создать базу.\n         " . implode("\n         ", $errors));
+        }
+
+        ок("база {$cfg['db_name']} и пользователь {$cfg['db_user']} готовы");
+
+        try {
             $pdo = new PDO("$dsnNoDb;dbname={$cfg['db_name']}", $cfg['db_user'], $cfg['db_pass'], [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             ]);
-        } catch (PDOException $e2) {
-            провал('не удалось создать базу: ' . $e2->getMessage());
+        } catch (PDOException $e3) {
+            провал('база создана, но подключиться пользователем приложения не вышло: ' . $e3->getMessage());
         }
     }
 

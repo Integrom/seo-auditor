@@ -95,7 +95,7 @@ php -S localhost:8000 -t public
 ## Проверка перед сдачей работы
 
 ```bash
-composer test        # 133 модульных теста, сети и БД не требуют
+composer test        # 134 модульных теста, сети и БД не требуют
 php bin/check_env.php
 ```
 

@@ -5,9 +5,11 @@ Env::load(dirname(__DIR__) . '/.env');
 
 return [
     'app' => [
-        'url'   => Env::get('APP_URL', 'https://seo.magnit365.ru'),
-        'name'  => 'SEO Аудитор',
-        'debug' => (bool) Env::get('APP_DEBUG', false),
+        'url'      => Env::get('APP_URL', 'https://seo.magnit365.ru'),
+        'name'     => 'SEO Аудитор',
+        'debug'    => (bool) Env::get('APP_DEBUG', false),
+        // Должен совпадать с поясом сервера и MySQL, иначе даты в отчётах разъедутся
+        'timezone' => Env::get('APP_TIMEZONE', 'Europe/Moscow'),
     ],
     'db' => [
         'host'    => Env::get('DB_HOST', 'localhost'),

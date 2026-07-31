@@ -1,17 +1,26 @@
+-- Полная схема SEO Аудитора.
+-- Для новой установки достаточно этого файла: php bin/install.php применит его сам.
+-- Файлы sql/migration_*.sql нужны только для обновления старых установок.
+
 CREATE TABLE IF NOT EXISTS `audits` (
-    `id`            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `uuid`          VARCHAR(36) NOT NULL UNIQUE,
-    `url`           VARCHAR(2048) NOT NULL,
-    `email`         VARCHAR(255) NOT NULL,
-    `status`        ENUM('pending','crawling','checking','reporting','done','error') DEFAULT 'pending',
-    `progress`      TINYINT UNSIGNED DEFAULT 0,
-    `progress_text` VARCHAR(255) DEFAULT '',
-    `pages_total`   INT DEFAULT 0,
-    `pages_crawled` INT DEFAULT 0,
-    `error_message` TEXT NULL,
-    `created_at`    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at`    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    `completed_at`  TIMESTAMP NULL
+    `id`                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `uuid`              VARCHAR(36) NOT NULL UNIQUE,
+    `url`               VARCHAR(2048) NOT NULL,
+    -- Домен вынесен отдельно, чтобы искать предыдущий аудит того же сайта
+    `host`              VARCHAR(255) DEFAULT '',
+    `previous_audit_id` INT UNSIGNED NULL,
+    `email`             VARCHAR(255) NOT NULL,
+    `status`            ENUM('pending','crawling','checking','reporting','done','error') DEFAULT 'pending',
+    `progress`          TINYINT UNSIGNED DEFAULT 0,
+    `progress_text`     VARCHAR(255) DEFAULT '',
+    `pages_total`       INT DEFAULT 0,
+    `pages_crawled`     INT DEFAULT 0,
+    `error_message`     TEXT NULL,
+    `score`             TINYINT UNSIGNED DEFAULT 0,
+    `created_at`        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `completed_at`      TIMESTAMP NULL,
+    INDEX `idx_host_status` (`host`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `audit_pages` (
@@ -35,15 +44,22 @@ CREATE TABLE IF NOT EXISTS `audit_issues` (
     `description`    TEXT,
     `recommendation` TEXT,
     `url`            VARCHAR(2048) DEFAULT '',
+    -- Хеш «тип проверки + заголовок»: по нему сравниваются аудиты между собой
+    `issue_key`      VARCHAR(64) DEFAULT '',
+    `is_new`         TINYINT DEFAULT 1,
     FOREIGN KEY (`audit_id`) REFERENCES `audits`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `audit_reports` (
-    `id`          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `audit_id`    INT UNSIGNED NOT NULL UNIQUE,
-    `html_report` LONGTEXT,
-    `pdf_path`    VARCHAR(500) DEFAULT '',
-    `audit_data`  LONGTEXT,
-    `created_at`  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `id`              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `audit_id`        INT UNSIGNED NOT NULL UNIQUE,
+    `html_report`     LONGTEXT,
+    `pdf_path`        VARCHAR(500) DEFAULT '',
+    `audit_data`      LONGTEXT,
+    -- Итоги сравнения с предыдущим аудитом
+    `fixed_count`     INT DEFAULT 0,
+    `new_count`       INT DEFAULT 0,
+    `unchanged_count` INT DEFAULT 0,
+    `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (`audit_id`) REFERENCES `audits`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

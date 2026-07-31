@@ -259,37 +259,75 @@ public function run(array $pages, array &$siteData): array
 
 ## Установка
 
-Требуется PHP ≥ 8.2 (тесты — 8.3+), MySQL/MariaDB, Composer.
+Требуется PHP ≥ 8.2 (тесты — 8.3+) с расширениями `pdo_mysql`, `curl`, `mbstring`,
+`dom`, `json`, `gd`, а также MySQL/MariaDB и Composer.
 
 ```bash
-git clone <repository-url> seo-auditor
+git clone https://github.com/Integrom/seo-auditor.git
 cd seo-auditor
 composer install
-cp .env.example .env
+php bin/install.php
 ```
 
-Заполните `.env` (доступ к БД, ключи SmartCaptcha, при необходимости PageSpeed API),
-создайте базу и примените схему:
+Установщик спросит адрес сайта, часовой пояс и доступ к базе, создаст `.env` и каталоги,
+применит схему и проверит окружение. Если базы ещё нет — попросит доступ администратора
+MySQL и заведёт её сам.
+
+Автоматический режим, без вопросов:
 
 ```bash
-mysql -u root -p -e "CREATE DATABASE seo_auditor CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-mysql -u root -p seo_auditor < sql/schema.sql
-mysql -u root -p seo_auditor < sql/migration_001_comparison.sql
+php bin/install.php --no-interaction \
+  --url=http://localhost:8000 \
+  --db-name=seo_auditor --db-user=seo_user --db-pass=секрет
 ```
 
-Веб-рут сервера направьте на `public/`, каталоги `reports/` и `logs/` должны быть
-доступны для записи пользователю PHP-FPM.
+Все ключи: `php bin/install.php --help`.
 
-Локальный запуск для разработки:
+### Первый аудит
+
+Веб-форма защищена капчей, поэтому для проверки удобнее консоль:
 
 ```bash
+php bin/audit.php https://example.com you@example.com --pages=5
 php -S localhost:8000 -t public
 ```
 
-## Развёртывание
+Отчёт откроется по адресу `http://localhost:8000/api/report.php?id=<UUID из вывода>`.
+Чтобы заработала форма на сайте, добавьте в `.env` ключи Яндекс SmartCaptcha.
 
-Скрипт `deploy.sh` копирует изменённые файлы на сервер и пересобирает автолоадер
-Composer (обязательно после добавления новых классов — автолоадер оптимизирован).
+### Инструменты командной строки
+
+| Команда | Назначение |
+|---|---|
+| `php bin/install.php` | установка: конфигурация, база, каталоги |
+| `php bin/check_env.php` | диагностика окружения, 20+ проверок |
+| `php bin/audit.php <url> [email] [--pages=N]` | аудит из консоли, минуя капчу |
+| `php bin/regen_pdf.php <uuid\|last>` | пересобрать PDF без повторного обхода |
+| `php bin/benchmark_crawl.php <url>` | замер скорости обхода |
+| `composer test` | модульные тесты |
+
+## Развёртывание на сервере
+
+Для чистого VPS (AlmaLinux 9 и другие RHEL-совместимые) есть скрипт, который ставит
+виртуальный хост, SSL от Let's Encrypt, базу и cron для фоновой очереди:
+
+```bash
+DOMAIN=seo.example.ru ADMIN_EMAIL=admin@example.ru \
+  ssh user@server 'bash -s' < setup_server.sh
+```
+
+Дальше на сервере — `composer install --no-dev` и `php bin/install.php`. Веб-рут должен
+указывать на `public/`, каталоги `reports/` и `logs/` — быть доступны на запись
+пользователю PHP-FPM.
+
+Обновление кода на уже развёрнутом сервере:
+
+```bash
+DEPLOY_SERVER=user@example.com DEPLOY_REMOTE=/var/www/seo-auditor ./deploy.sh
+```
+
+Скрипт отправляет только изменённые в git файлы и пересобирает автолоадер Composer —
+это обязательно после добавления новых классов, потому что автолоадер оптимизирован.
 
 ## Лицензия
 

@@ -11,7 +11,7 @@ class CommercialFactorsCheck extends BaseCheck
         // Берём текст первых 10 страниц для анализа
         $sample  = array_slice($pages, 0, 10);
         $allHtml = implode(' ', array_column($sample, 'html'));
-        $allText = mb_strtolower(strip_tags($allHtml));
+        $allText = mb_strtolower($this->visibleText($allHtml));
         $allHtmlLower = mb_strtolower($allHtml);
 
         $factors = $this->detectFactors($allHtml, $allText, $allHtmlLower, $url);
@@ -52,6 +52,26 @@ class CommercialFactorsCheck extends BaseCheck
         return $this->issues;
     }
 
+    /**
+     * Текст страницы вместе с подписями из атрибутов.
+     *
+     * strip_tags() выбрасывает value, placeholder и aria-label, а подписи
+     * кнопок часто живут именно там: <input type="submit" value="Оставить заявку">.
+     * Из-за этого кнопка заказа считалась отсутствующей на сайтах, где она есть.
+     */
+    private function visibleText(string $html): string
+    {
+        $html = preg_replace('#<script\b[^>]*>.*?</script>#is', ' ', $html) ?? $html;
+        $html = preg_replace('#<style\b[^>]*>.*?</style>#is', ' ', $html) ?? $html;
+
+        $attrText = '';
+        if (preg_match_all('/\b(?:value|placeholder|aria-label|title|alt)\s*=\s*"([^"]*)"/i', $html, $m)) {
+            $attrText = ' ' . implode(' ', $m[1]);
+        }
+
+        return strip_tags($html) . $attrText;
+    }
+
     private function detectFactors(string $allHtml, string $allText, string $allHtmlLower, string $url): array
     {
         $factors = [];
@@ -59,11 +79,13 @@ class CommercialFactorsCheck extends BaseCheck
         // HTTPS
         $factors['HTTPS'] = str_starts_with($url, 'https://');
 
-        // Телефон
-        $factors['Телефон'] = (bool)preg_match(
-            '/(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/',
-            $allText
-        );
+        // Телефон: либо ссылка tel:, либо номер в тексте
+        $factors['Телефон'] = str_contains($allHtmlLower, 'href="tel:')
+            || str_contains($allHtmlLower, "href='tel:")
+            || (bool)preg_match(
+                '/(?:\+7|\b8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}\b/',
+                $allText
+            );
 
         // Адрес
         $factors['Адрес'] = (bool)preg_match(
@@ -89,15 +111,19 @@ class CommercialFactorsCheck extends BaseCheck
             $allHtmlLower
         );
 
-        // Кнопка "Заказать"
+        // Призыв к действию: ищем по корню слова, а не по точной фразе —
+        // формулировок много («Оставить заявку», «Отправить заявку», «Заявка на расчёт»)
         $factors['Кнопка «Заказать»'] = (bool)preg_match(
-            '/(?:заказать|оставить заявку|оставить заявку|купить|оформить заказ|получить консультацию|отправить заявку)/iu',
+            '/(?:заказать|заказ[аы]|заявк|купить|консультаци|обратный звонок|перезвон|рассчитать стоимость)/iu',
             $allText
         );
 
-        // Онлайн-консультант
+        // Онлайн-консультант. Битрикс24 подключается через site_button/imopenlines,
+        // слова «chat» в подключении нет — по нему виджет не находился
         $factors['Онлайн-консультант'] = (bool)preg_match(
-            '/(?:jivo|jivosite|livetex|verbox|omnidesk|talkme|callibri|livechat|helpcrunch|bitrix24.*chat|jivowidget)/iu',
+            '/(?:jivo|jivosite|jivowidget|livetex|verbox|omnidesk|talk-?me|callibri|livechat|helpcrunch'
+            . '|site_button|imopenlines|cdn-ru\.bitrix24|bitrix24.{0,40}(?:widget|button|chat)'
+            . '|carrotquest|chatra|envybox|marquiz|tawk\.to|webim)/iu',
             $allHtmlLower
         );
 

@@ -34,7 +34,7 @@ class ReportBuilder
         $warnings = array_filter($issues, fn($i) => $i['severity'] === 'warning');
         $infos    = array_filter($issues, fn($i) => $i['severity'] === 'info');
 
-        $score = $this->calcScore($issues);
+        $score = Score::overall($issues, count($pages));
 
         $grouped = [];
         foreach ($issues as $issue) {
@@ -52,7 +52,7 @@ class ReportBuilder
         $url   = $audit['url'] ?? '';
         $host  = parse_url($url, PHP_URL_HOST);
         $date  = date('d.m.Y H:i');
-        $score = $this->calcScore($issues);
+        $score = Score::overall($issues, count($pages));
 
         ob_start();
         include __DIR__ . '/../../templates/report_pdf.php';
@@ -89,11 +89,6 @@ class ReportBuilder
         }
 
         return $pdfPath;
-    }
-
-    private function calcScore(array $issues): int
-    {
-        return Score::overall($issues);
     }
 
     public function getScoreColor(int $score): string

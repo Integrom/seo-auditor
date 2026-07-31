@@ -47,7 +47,83 @@ class ScoreTest extends TestCase
         for ($i = 0; $i < 78; $i++) {
             $issues[] = $this->issue('warning', 'seo', 'Изображения без alt');
         }
+        // Без указания числа страниц охват неизвестен — штраф базовый
         $this->assertSame(98, Score::overall($issues), 'Ожидался один штраф за 78 страниц');
+    }
+
+    // ── Учёт охвата проблемы ───────────────────────────────────────────
+
+    public function testМассоваяПроблемаШтрафуетсяСильнееТочечной(): void
+    {
+        $точечная = [$this->issue('warning', 'technical', 'Битая ссылка')];
+
+        $массовая = [];
+        for ($i = 0; $i < 100; $i++) {
+            $массовая[] = $this->issue('warning', 'technical', 'Битая ссылка');
+        }
+
+        $оценкаТочечной = Score::overall($точечная, 100);
+        $оценкаМассовой = Score::overall($массовая, 100);
+
+        $this->assertLessThan($оценкаТочечной, $оценкаМассовой,
+            'Битые ссылки на всём сайте должны бить по оценке сильнее одной битой ссылки');
+    }
+
+    public function testОхватНоНеПостраничныйШтраф(): void
+    {
+        $issues = [];
+        for ($i = 0; $i < 103; $i++) {
+            $issues[] = $this->issue('warning', 'technical', 'Битая ссылка');
+        }
+        $score = Score::overall($issues, 109);
+
+        // Множитель охвата — максимум трёхкратный, а не 103-кратный
+        $this->assertSame(94, $score);
+    }
+
+    public function testКоэффициентОхватаРастётСтупенчато(): void
+    {
+        $this->assertSame(1.0, Score::breadthFactor(1, 100),  'одна страница — без надбавки');
+        $this->assertSame(1.5, Score::breadthFactor(6, 100),  'от 5% страниц');
+        $this->assertSame(2.0, Score::breadthFactor(25, 100), 'от 20% страниц');
+        $this->assertSame(3.0, Score::breadthFactor(60, 100), 'от половины сайта');
+    }
+
+    public function testНаМаленькомСайтеОхватНеУчитывается(): void
+    {
+        // На трёх страницах доля «половина сайта» ничего не значит
+        $this->assertSame(1.0, Score::breadthFactor(2, 3));
+    }
+
+    public function testРазделСМассовойПроблемойНеВыглядитЗдоровым(): void
+    {
+        $здоровый  = Score::categoryFromGroups([['severity' => 'warning', 'count' => 1]], 109);
+        $проблемный = Score::categoryFromGroups([['severity' => 'warning', 'count' => 103]], 109);
+
+        $this->assertGreaterThan(90, $здоровый, 'Одна точечная проблема почти не влияет');
+        $this->assertLessThan($здоровый, $проблемный);
+        $this->assertLessThan(90, $проблемный, 'Битые ссылки на всём сайте — не 90% здоровья');
+    }
+
+    public function testРазделБезПроблемОстаётсяСтопроцентным(): void
+    {
+        $this->assertSame(100, Score::categoryFromGroups([], 100));
+        $this->assertSame(100, Score::categoryFromGroups([['severity' => 'info', 'count' => 30]], 100));
+    }
+
+    public function testГруппыСчитаютЗатронутыеСтраницы(): void
+    {
+        $issues = [
+            $this->issue('warning', 'seo', 'Нет alt'),
+            $this->issue('warning', 'seo', 'Нет alt'),
+            $this->issue('critical', 'fz152', 'Нет согласия'),
+        ];
+        $stats = Score::groupStats($issues);
+
+        $this->assertCount(2, $stats);
+        $pages = array_column($stats, 'pages');
+        sort($pages);
+        $this->assertSame([1, 2], $pages);
     }
 
     public function testЧисловыеДеталиВЗаголовкеНеСоздаютНовуюПроблему(): void

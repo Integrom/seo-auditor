@@ -323,36 +323,92 @@ class SeoCheck extends BaseCheck
 
     private function checkSitemap(string $siteUrl, array &$siteData): void
     {
-        $base      = parse_url($siteUrl, PHP_URL_SCHEME) . '://' . parse_url($siteUrl, PHP_URL_HOST);
-        $locations = ["$base/sitemap.xml", "$base/sitemap_index.xml", "$base/sitemap/"];
-        $found     = false;
+        $base   = parse_url($siteUrl, PHP_URL_SCHEME) . '://' . parse_url($siteUrl, PHP_URL_HOST);
+        $client = new \GuzzleHttp\Client(['timeout' => 8, 'verify' => false, 'http_errors' => false]);
+
+        // Адреса карт, объявленные в robots.txt, имеют приоритет над угадыванием
+        $locations = [];
+        try {
+            $robotsResp = $client->get("$base/robots.txt");
+            if ($robotsResp->getStatusCode() === 200) {
+                $locations = (new \SeoAuditor\Core\RobotsTxt((string)$robotsResp->getBody()))->sitemaps();
+            }
+        } catch (\Exception $e) {}
+
+        $locations = array_values(array_unique(array_merge(
+            $locations,
+            ["$base/sitemap.xml", "$base/sitemap_index.xml", "$base/sitemap/"]
+        )));
 
         foreach ($locations as $loc) {
             try {
-                $client = new \GuzzleHttp\Client(['timeout' => 5, 'verify' => false]);
-                $resp   = $client->get($loc);
-                if ($resp->getStatusCode() === 200) {
-                    $body     = (string)$resp->getBody();
-                    $urlCount = substr_count($body, '<url>');
-                    $siteData['sitemap_url']   = $loc;
-                    $siteData['sitemap_count'] = $urlCount;
-                    $this->info('seo', "Sitemap найден: $urlCount URL",
-                        "Sitemap доступен: $loc",
-                        "Убедитесь что sitemap содержит все важные страницы и указан в robots.txt.",
+                if (!\SeoAuditor\Core\UrlGuard::isAllowed($loc)) continue;
+                $resp = $client->get($loc);
+                if ($resp->getStatusCode() !== 200) continue;
+
+                $body = (string)$resp->getBody();
+                if (!str_contains($body, '<urlset') && !str_contains($body, '<sitemapindex')) continue;
+
+                [$urlCount, $nestedCount] = $this->countSitemapUrls($client, $body);
+
+                $siteData['sitemap_url']    = $loc;
+                $siteData['sitemap_count']  = $urlCount;
+                $siteData['sitemap_nested'] = $nestedCount;
+
+                $nestedNote = $nestedCount > 0 ? " (индекс из $nestedCount вложенных карт)" : '';
+
+                if ($urlCount === 0) {
+                    $this->warning('seo', 'Sitemap пуст',
+                        "Карта сайта доступна по адресу $loc, но не содержит ни одного адреса страницы$nestedNote.",
+                        "Проверьте генерацию карты сайта: поисковики не получают из неё списка страниц.",
                         $loc
                     );
-                    $found = true;
-                    break;
+                } else {
+                    $this->info('seo', "Sitemap найден: $urlCount URL",
+                        "Карта сайта доступна: $loc$nestedNote.",
+                        "Убедитесь, что карта содержит все важные страницы и указана в robots.txt.",
+                        $loc
+                    );
                 }
+                return;
             } catch (\Exception $e) {}
         }
 
-        if (!$found) {
-            $this->warning('seo', 'Sitemap.xml не найден',
-                "Файл sitemap.xml недоступен по стандартным адресам.",
-                "Создайте XML-карту сайта и укажите её в robots.txt: Sitemap: $base/sitemap.xml",
-                "$base/sitemap.xml"
-            );
+        $this->warning('seo', 'Sitemap.xml не найден',
+            "Файл sitemap.xml недоступен по стандартным адресам.",
+            "Создайте XML-карту сайта и укажите её в robots.txt: Sitemap: $base/sitemap.xml",
+            "$base/sitemap.xml"
+        );
+    }
+
+    /**
+     * Считает адреса в карте сайта. Индекс карт содержит теги <sitemap>, а не <url>,
+     * поэтому прямой подсчёт <url> давал ноль на сайтах с вложенными картами.
+     *
+     * @return array{0:int, 1:int} [всего адресов, сколько вложенных карт разобрано]
+     */
+    private function countSitemapUrls(\GuzzleHttp\Client $client, string $xml, int $depth = 0): array
+    {
+        $count  = substr_count($xml, '<url>');
+        $nested = 0;
+
+        if ($depth >= 2 || stripos($xml, '<sitemapindex') === false) {
+            return [$count, $nested];
         }
+
+        preg_match_all('/<loc>\s*(https?:\/\/[^<]+)\s*<\/loc>/i', $xml, $m);
+        foreach (array_slice($m[1] ?? [], 0, 50) as $loc) {
+            $loc = trim($loc);
+            if (!\SeoAuditor\Core\UrlGuard::isAllowed($loc)) continue;
+            try {
+                $resp = $client->get($loc);
+                if ($resp->getStatusCode() !== 200) continue;
+                [$sub, $subNested] = $this->countSitemapUrls($client, (string)$resp->getBody(), $depth + 1);
+                $count  += $sub;
+                $nested += 1 + $subNested;
+            } catch (\Exception $e) {}
+        }
+
+        return [$count, $nested];
     }
 }

@@ -68,9 +68,14 @@ function groupIssuesByTitle(array $issues): array {
     return array_values($groups);
 }
 
-// Здоровье категории 0–100 — формула в Report\Score
-function categoryHealth(int $crit, int $warn): int {
-    return Score::category($crit, $warn);
+// Здоровье категории 0–100 — формула в Report\Score, учитывает охват проблем
+function categoryHealthFromGroups(array $allGroups, array $types, int $totalPages): int {
+    $groups = [];
+    foreach ($allGroups as $g) {
+        if (!in_array($g['rep']['check_type'], $types, true)) continue;
+        $groups[] = ['severity' => $g['rep']['severity'], 'count' => $g['count']];
+    }
+    return Score::categoryFromGroups($groups, $totalPages);
 }
 
 $prevScore = null;
@@ -95,12 +100,17 @@ $catMeta = [
 ];
 $allGroups = groupIssuesByTitle($issues);
 
+$totalPages = count($pages);
+
 $catHealth = [];
 foreach ($tabChecks as $tabId => $types) {
     $crit = countGroupsBySeverity($allGroups, $types, 'critical');
     $warn = countGroupsBySeverity($allGroups, $types, 'warning');
     $info = countGroupsBySeverity($allGroups, $types, 'info');
-    $catHealth[$tabId] = ['h'=>categoryHealth($crit,$warn),'crit'=>$crit,'warn'=>$warn,'info'=>$info];
+    $catHealth[$tabId] = [
+        'h'    => categoryHealthFromGroups($allGroups, $types, $totalPages),
+        'crit' => $crit, 'warn' => $warn, 'info' => $info,
+    ];
 }
 
 // Радар

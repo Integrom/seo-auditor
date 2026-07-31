@@ -100,9 +100,19 @@ class Crawler
         return $wave;
     }
 
-    /** Скачивает волну параллельно и разбирает ответы */
+    /**
+     * Скачивает волну параллельно.
+     *
+     * Ответы приходят в произвольном порядке — какой сервер отдал первым.
+     * Складывать их в этом порядке нельзя: проверки считают $pages[0] главной
+     * страницей, и при параллельной загрузке туда попадала случайная страница.
+     * Поэтому результаты собираются в отображение по адресу, а в общий список
+     * добавляются строго в порядке очереди.
+     */
     private function fetchWave(array $urls, ?callable $onPage): void
     {
+        $results = [];
+
         $requests = function () use ($urls) {
             foreach ($urls as $url) {
                 yield $url => new Request('GET', $url);
@@ -116,28 +126,40 @@ class Crawler
                     $this->timings[(string) $stats->getEffectiveUri()] = round($stats->getTransferTime() * 1000);
                 },
             ],
-            'fulfilled' => function (ResponseInterface $response, string $url) use ($onPage) {
-                $this->handleResponse($url, $response, $onPage);
+            'fulfilled' => function (ResponseInterface $response, string $url) use (&$results) {
+                $results[$url] = $this->buildPage($url, $response);
             },
-            'rejected' => function ($reason, string $url) use ($onPage) {
-                $this->handleFailure($url, $reason, $onPage);
+            'rejected' => function ($reason, string $url) use (&$results) {
+                $results[$url] = $this->buildFailedPage($url, $reason);
             },
         ]);
 
         $pool->promise()->wait();
+
+        // Порядок обхода сохраняем: сначала стартовая страница, дальше по очереди
+        foreach ($urls as $url) {
+            if (!isset($results[$url])) continue;
+            if (count($this->pages) >= $this->maxPages) break;
+
+            $page = $results[$url];
+            $this->pages[] = $page;
+            if ($onPage) $onPage($page, count($this->pages));
+
+            if (!empty($page['html'])) {
+                $this->extractLinks($page['html'], $url);
+            }
+        }
     }
 
-    private function handleResponse(string $url, ResponseInterface $response, ?callable $onPage): void
+    private function buildPage(string $url, ResponseInterface $response): array
     {
-        if (count($this->pages) >= $this->maxPages) return;
-
         $html    = (string) $response->getBody();
         $headers = [];
         foreach ($response->getHeaders() as $name => $values) {
             $headers[strtolower($name)] = implode(', ', $values);
         }
 
-        $page = [
+        return [
             'url'         => $url,
             'status_code' => $response->getStatusCode(),
             'html'        => $html,
@@ -145,36 +167,24 @@ class Crawler
             'response_ms' => $this->timings[$url] ?? 0,
             'size_bytes'  => strlen($html),
         ];
-
-        $this->pages[] = $page;
-        if ($onPage) $onPage($page, count($this->pages));
-
-        $this->extractLinks($html, $url);
     }
 
-    private function handleFailure(string $url, mixed $reason, ?callable $onPage): void
+    private function buildFailedPage(string $url, mixed $reason): array
     {
-        if (count($this->pages) >= $this->maxPages) return;
-
-        $code    = 0;
-        $message = $reason instanceof \Throwable ? $reason->getMessage() : (string) $reason;
-
+        $code = 0;
         if ($reason instanceof RequestException && $reason->getResponse()) {
             $code = $reason->getResponse()->getStatusCode();
         }
 
-        $page = [
+        return [
             'url'         => $url,
             'status_code' => $code,
             'html'        => '',
             'headers'     => [],
             'response_ms' => $this->timings[$url] ?? 0,
             'size_bytes'  => 0,
-            'error'       => $message,
+            'error'       => $reason instanceof \Throwable ? $reason->getMessage() : (string) $reason,
         ];
-
-        $this->pages[] = $page;
-        if ($onPage) $onPage($page, count($this->pages));
     }
 
     /** Одиночная загрузка страницы — используется вне обхода */
@@ -251,20 +261,30 @@ class Crawler
                 $nested = [];
 
                 foreach ($locs as $loc) {
-                    if (UrlTools::isSameHost($loc, $this->baseHost)) {
-                        $this->enqueue(UrlTools::normalize($loc));
-                    } elseif (str_ends_with($loc, '.xml')) {
+                    // Сначала распознаём вложенную карту: индексы sitemap почти всегда
+                    // лежат на том же домене, и проверка домена перехватывала бы их
+                    // раньше, а фильтр расширений затем молча выбрасывал .xml
+                    if (self::isSitemapUrl($loc)) {
                         $nested[] = $loc;
+                    } elseif (UrlTools::isSameHost($loc, $this->baseHost)) {
+                        $this->enqueue(UrlTools::normalize($loc));
                     }
                 }
 
                 // Вложенные карты сайта тоже забираем параллельно
-                $this->seedFromNested(array_slice($nested, 0, 20));
+                $this->seedFromNested(array_slice($nested, 0, 50));
                 break;
             } catch (\Exception $e) {
                 // Карты сайта нет или она недоступна — обойдёмся ссылками
             }
         }
+    }
+
+    /** Ссылка ведёт на карту сайта, а не на страницу */
+    private static function isSitemapUrl(string $url): bool
+    {
+        $path = strtolower(parse_url($url, PHP_URL_PATH) ?? '');
+        return str_ends_with($path, '.xml') || str_ends_with($path, '.xml.gz');
     }
 
     private function seedFromNested(array $urls): void

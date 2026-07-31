@@ -129,7 +129,7 @@ class AuditManager
 
             // ── 4. Считаем сравнение ──────────────────────────────────────
             $comparison = $this->buildComparison($allIssues, $prevKeys);
-            $score      = $this->calcScore($allIssues);
+            $score      = \SeoAuditor\Report\Score::overall($allIssues, count($pages));
 
             Database::update('audits', ['score' => $score], 'id = :id', [':id' => $this->auditId]);
 
@@ -217,11 +217,6 @@ class AuditManager
             'unchanged_count' => $unchangedCount,
             'prev_audit_id'  => $this->previousAuditId,
         ];
-    }
-
-    private function calcScore(array $issues): int
-    {
-        return \SeoAuditor\Report\Score::overall($issues);
     }
 
     private function setProgress(int $progress, string $text): void

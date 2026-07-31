@@ -25,10 +25,13 @@ return [
         'from_name' => Env::get('MAIL_FROM_NAME', 'SEO Аудитор'),
     ],
     'crawler' => [
-        'max_pages'  => (int) Env::get('CRAWLER_MAX_PAGES', 500),
-        'timeout'    => (int) Env::get('CRAWLER_TIMEOUT', 10),
-        'delay'      => (float) Env::get('CRAWLER_DELAY', 0.3),
-        'user_agent' => Env::get('CRAWLER_USER_AGENT', 'SeoAuditorBot/1.0 (+https://seo.magnit365.ru)'),
+        'max_pages'   => (int) Env::get('CRAWLER_MAX_PAGES', 500),
+        'timeout'     => (int) Env::get('CRAWLER_TIMEOUT', 10),
+        // Пауза между волнами параллельных запросов, секунды
+        'delay'       => (float) Env::get('CRAWLER_DELAY', 0.2),
+        // Сколько страниц скачивается одновременно
+        'concurrency' => (int) Env::get('CRAWLER_CONCURRENCY', 8),
+        'user_agent'  => Env::get('CRAWLER_USER_AGENT', 'SeoAuditorBot/1.0 (+https://seo.magnit365.ru)'),
     ],
     'captcha' => [
         'sitekey' => Env::get('CAPTCHA_SITEKEY', ''),

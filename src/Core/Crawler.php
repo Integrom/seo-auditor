@@ -2,24 +2,40 @@
 namespace SeoAuditor\Core;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\Pool;
+use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Exception\RequestException;
-use Symfony\Component\DomCrawler\Crawler as DomCrawler;
+use Psr\Http\Message\ResponseInterface;
 
+/**
+ * Обход сайта. Страницы загружаются параллельно (Guzzle Pool) волнами в ширину:
+ * очередь текущего уровня скачивается одновременно, найденные на ней ссылки
+ * образуют следующую волну. Последовательный обход 500 страниц занимал минуты —
+ * основное время уходило на ожидание ответа, а не на разбор HTML.
+ */
 class Crawler
 {
     private Client $client;
-    private array $visited = [];
-    private array $queued  = [];
-    private array $queue   = [];
+    private array  $visited = [];
+    private array  $queued  = [];
+    private array  $queue   = [];
     private string $baseHost;
     private string $baseUrl;
-    private int $maxPages;
-    private array $pages = [];
+    private int    $maxPages;
+    private int    $concurrency;
+    private float  $waveDelay;
+    private array  $pages = [];
 
-    public function __construct()
+    /** Время ответа по адресам, заполняется обработчиком статистики Guzzle */
+    private array $timings = [];
+
+    public function __construct(?int $concurrency = null)
     {
-        $this->maxPages = Config::get('crawler.max_pages', 100);
-        $this->client   = new Client([
+        $this->maxPages    = (int) Config::get('crawler.max_pages', 100);
+        $this->concurrency = max(1, $concurrency ?? (int) Config::get('crawler.concurrency', 8));
+        $this->waveDelay   = (float) Config::get('crawler.delay', 0.3);
+
+        $this->client = new Client([
             'timeout'         => Config::get('crawler.timeout', 10),
             'allow_redirects' => [
                 'max'             => 5,
@@ -31,107 +47,146 @@ class Crawler
             ],
             'verify'          => false,
             'headers'         => [
-                'User-Agent' => Config::get('crawler.user_agent', 'SeoAuditorBot/1.0'),
-                'Accept'     => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'User-Agent'      => Config::get('crawler.user_agent', 'SeoAuditorBot/1.0'),
+                'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Encoding' => 'gzip, deflate',
             ],
         ]);
     }
 
-    public function crawl(string $startUrl, callable $onPage = null): array
+    public function crawl(string $startUrl, ?callable $onPage = null): array
     {
         UrlGuard::assert($startUrl);
 
         $parsed         = parse_url($startUrl);
-        $this->baseHost = $parsed['host'];
-        $this->baseUrl  = $parsed['scheme'] . '://' . $parsed['host'];
+        $this->baseHost = strtolower($parsed['host']);
+        $this->baseUrl  = strtolower($parsed['scheme']) . '://' . $this->baseHost;
 
-        $this->enqueue($this->normalizeUrl($startUrl));
+        $this->enqueue(UrlTools::normalize($startUrl));
         $this->seedFromSitemap();
 
         while (!empty($this->queue) && count($this->pages) < $this->maxPages) {
-            $url = array_shift($this->queue);
-            if (isset($this->visited[$url])) continue;
-            $this->visited[$url] = true;
+            $wave = $this->takeWave();
+            if (empty($wave)) break;
 
-            $page = $this->fetchPage($url);
-            if ($page) {
-                $this->pages[] = $page;
-                if ($onPage) $onPage($page, count($this->pages));
-                $this->extractLinks($page['html'] ?? '', $url);
+            $this->fetchWave($wave, $onPage);
+
+            if ($this->waveDelay > 0 && !empty($this->queue) && count($this->pages) < $this->maxPages) {
+                usleep((int) ($this->waveDelay * 1_000_000));
             }
-
-            usleep((int)(Config::get('crawler.delay', 0.3) * 1_000_000));
         }
 
         return $this->pages;
     }
 
-    private function enqueue(string $url): void
+    /** Берёт из очереди следующую волну, не превышая остаток лимита страниц */
+    private function takeWave(): array
     {
-        if (!isset($this->visited[$url]) && !isset($this->queued[$url]) && $this->isHtmlUrl($url)) {
-            $this->queued[$url] = true;
-            $this->queue[]      = $url;
+        $capacity = $this->maxPages - count($this->pages);
+        if ($capacity <= 0) return [];
+
+        $wave = [];
+        while (!empty($this->queue) && count($wave) < $capacity) {
+            $url = array_shift($this->queue);
+            if (isset($this->visited[$url])) continue;
+            // Проверяем прямо перед запросом: ссылка могла прийти со страницы сайта
+            if (!UrlGuard::isAllowed($url)) {
+                error_log("[Crawler] пропущен запрещённый адрес: $url");
+                continue;
+            }
+            $this->visited[$url] = true;
+            $wave[] = $url;
         }
+        return $wave;
     }
 
-    private function isHtmlUrl(string $url): bool
+    /** Скачивает волну параллельно и разбирает ответы */
+    private function fetchWave(array $urls, ?callable $onPage): void
     {
-        $path = parse_url($url, PHP_URL_PATH) ?? '';
-        $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-        if ($ext === '') return true;
-        $nonHtml = ['xml','pdf','jpg','jpeg','png','gif','webp','svg','ico','bmp','tiff',
-                    'zip','rar','tar','gz','7z','doc','docx','xls','xlsx','ppt','pptx',
-                    'mp3','mp4','avi','mov','wmv','flv','css','js','json','txt','csv',
-                    'woff','woff2','ttf','eot','otf'];
-        return !in_array($ext, $nonHtml, true);
+        $requests = function () use ($urls) {
+            foreach ($urls as $url) {
+                yield $url => new Request('GET', $url);
+            }
+        };
+
+        $pool = new Pool($this->client, $requests(), [
+            'concurrency' => $this->concurrency,
+            'options'     => [
+                'on_stats' => function (\GuzzleHttp\TransferStats $stats) {
+                    $this->timings[(string) $stats->getEffectiveUri()] = round($stats->getTransferTime() * 1000);
+                },
+            ],
+            'fulfilled' => function (ResponseInterface $response, string $url) use ($onPage) {
+                $this->handleResponse($url, $response, $onPage);
+            },
+            'rejected' => function ($reason, string $url) use ($onPage) {
+                $this->handleFailure($url, $reason, $onPage);
+            },
+        ]);
+
+        $pool->promise()->wait();
     }
 
-    private function seedFromSitemap(): void
+    private function handleResponse(string $url, ResponseInterface $response, ?callable $onPage): void
     {
-        $candidates = [
-            $this->baseUrl . '/sitemap.xml',
-            $this->baseUrl . '/sitemap_index.xml',
+        if (count($this->pages) >= $this->maxPages) return;
+
+        $html    = (string) $response->getBody();
+        $headers = [];
+        foreach ($response->getHeaders() as $name => $values) {
+            $headers[strtolower($name)] = implode(', ', $values);
+        }
+
+        $page = [
+            'url'         => $url,
+            'status_code' => $response->getStatusCode(),
+            'html'        => $html,
+            'headers'     => $headers,
+            'response_ms' => $this->timings[$url] ?? 0,
+            'size_bytes'  => strlen($html),
         ];
-        foreach ($candidates as $sitemapUrl) {
-            try {
-                $resp = $this->client->get($sitemapUrl, ['timeout' => 8, 'http_errors' => false]);
-                if ($resp->getStatusCode() !== 200) continue;
-                $xml = (string) $resp->getBody();
-                preg_match_all('/<loc>\s*(https?:\/\/[^<]+)\s*<\/loc>/i', $xml, $m);
-                foreach ($m[1] as $loc) {
-                    $loc = trim($loc);
-                    if ($this->isSameDomain($loc)) {
-                        $this->enqueue($this->normalizeUrl($loc));
-                    } elseif (str_ends_with($loc, '.xml')) {
-                        // вложенный sitemap — парсим рекурсивно.
-                        // Может указывать на чужой хост, поэтому проверяем адрес
-                        if (!UrlGuard::isAllowed($loc)) continue;
-                        try {
-                            $sub = $this->client->get($loc, ['timeout' => 8, 'http_errors' => false]);
-                            if ($sub->getStatusCode() === 200) {
-                                preg_match_all('/<loc>\s*(https?:\/\/[^<]+)\s*<\/loc>/i', (string)$sub->getBody(), $sm);
-                                foreach ($sm[1] as $subloc) {
-                                    $subloc = trim($subloc);
-                                    if ($this->isSameDomain($subloc)) $this->enqueue($this->normalizeUrl($subloc));
-                                }
-                            }
-                        } catch (\Exception $e) {}
-                    }
-                }
-                break; // нашли рабочий sitemap
-            } catch (\Exception $e) {}
-        }
+
+        $this->pages[] = $page;
+        if ($onPage) $onPage($page, count($this->pages));
+
+        $this->extractLinks($html, $url);
     }
 
+    private function handleFailure(string $url, mixed $reason, ?callable $onPage): void
+    {
+        if (count($this->pages) >= $this->maxPages) return;
+
+        $code    = 0;
+        $message = $reason instanceof \Throwable ? $reason->getMessage() : (string) $reason;
+
+        if ($reason instanceof RequestException && $reason->getResponse()) {
+            $code = $reason->getResponse()->getStatusCode();
+        }
+
+        $page = [
+            'url'         => $url,
+            'status_code' => $code,
+            'html'        => '',
+            'headers'     => [],
+            'response_ms' => $this->timings[$url] ?? 0,
+            'size_bytes'  => 0,
+            'error'       => $message,
+        ];
+
+        $this->pages[] = $page;
+        if ($onPage) $onPage($page, count($this->pages));
+    }
+
+    /** Одиночная загрузка страницы — используется вне обхода */
     public function fetchPage(string $url): ?array
     {
         try {
             UrlGuard::assert($url);
             $start    = microtime(true);
             $response = $this->client->get($url);
-            $time     = round((microtime(true) - $start) * 1000);
             $html     = (string) $response->getBody();
-            $headers  = [];
+
+            $headers = [];
             foreach ($response->getHeaders() as $name => $values) {
                 $headers[strtolower($name)] = implode(', ', $values);
             }
@@ -141,14 +196,13 @@ class Crawler
                 'status_code' => $response->getStatusCode(),
                 'html'        => $html,
                 'headers'     => $headers,
-                'response_ms' => $time,
+                'response_ms' => (int) round((microtime(true) - $start) * 1000),
                 'size_bytes'  => strlen($html),
             ];
         } catch (RequestException $e) {
-            $code = $e->getResponse() ? $e->getResponse()->getStatusCode() : 0;
             return [
                 'url'         => $url,
-                'status_code' => $code,
+                'status_code' => $e->getResponse() ? $e->getResponse()->getStatusCode() : 0,
                 'html'        => '',
                 'headers'     => [],
                 'response_ms' => 0,
@@ -156,52 +210,101 @@ class Crawler
                 'error'       => $e->getMessage(),
             ];
         } catch (\RuntimeException $e) {
-            // Ссылка ведёт на запрещённый адрес — пропускаем страницу, аудит продолжается
             error_log("[Crawler] пропущен $url: " . $e->getMessage());
             return null;
         }
     }
 
+    private function enqueue(string $url): void
+    {
+        if ($url === '') return;
+        if (isset($this->visited[$url]) || isset($this->queued[$url])) return;
+        if (!UrlTools::isHtmlUrl($url)) return;
+
+        $this->queued[$url] = true;
+        $this->queue[]      = $url;
+    }
+
     private function extractLinks(string $html, string $currentUrl): void
     {
-        if (empty($html)) return;
-        try {
-            $dom = new DomCrawler($html, $currentUrl);
-            $dom->filter('a[href]')->each(function (DomCrawler $node) {
-                $href = $node->attr('href');
-                if (!$href) return;
-                $abs = $this->toAbsolute($href, $this->baseUrl);
-                if ($abs && $this->isSameDomain($abs)) $this->enqueue($abs);
-            });
-        } catch (\Exception $e) {}
+        foreach (UrlTools::extractHrefs($html) as $href) {
+            $abs = UrlTools::resolve($href, $currentUrl);
+            if ($abs !== null && UrlTools::isSameHost($abs, $this->baseHost)) {
+                $this->enqueue($abs);
+            }
+        }
     }
 
-    private function toAbsolute(string $href, string $base): ?string
+    private function seedFromSitemap(): void
     {
-        if (str_starts_with($href, 'http://') || str_starts_with($href, 'https://')) {
-            return $this->normalizeUrl($href);
+        $candidates = [
+            $this->baseUrl . '/sitemap.xml',
+            $this->baseUrl . '/sitemap_index.xml',
+        ];
+
+        foreach ($candidates as $sitemapUrl) {
+            try {
+                $resp = $this->client->get($sitemapUrl, ['timeout' => 8, 'http_errors' => false]);
+                if ($resp->getStatusCode() !== 200) continue;
+
+                $locs = $this->extractLocs((string) $resp->getBody());
+                $nested = [];
+
+                foreach ($locs as $loc) {
+                    if (UrlTools::isSameHost($loc, $this->baseHost)) {
+                        $this->enqueue(UrlTools::normalize($loc));
+                    } elseif (str_ends_with($loc, '.xml')) {
+                        $nested[] = $loc;
+                    }
+                }
+
+                // Вложенные карты сайта тоже забираем параллельно
+                $this->seedFromNested(array_slice($nested, 0, 20));
+                break;
+            } catch (\Exception $e) {
+                // Карты сайта нет или она недоступна — обойдёмся ссылками
+            }
         }
-        if (str_starts_with($href, '//')) {
-            return $this->normalizeUrl('https:' . $href);
-        }
-        if (str_starts_with($href, '/')) {
-            return $this->normalizeUrl($this->baseUrl . $href);
-        }
-        return null;
     }
 
-    private function isSameDomain(string $url): bool
+    private function seedFromNested(array $urls): void
     {
-        $host = parse_url($url, PHP_URL_HOST);
-        return $host === $this->baseHost;
+        $urls = array_values(array_filter($urls, fn($u) => UrlGuard::isAllowed($u)));
+        if (empty($urls)) return;
+
+        $requests = function () use ($urls) {
+            foreach ($urls as $url) {
+                yield $url => new Request('GET', $url);
+            }
+        };
+
+        $pool = new Pool($this->client, $requests(), [
+            'concurrency' => min($this->concurrency, 4),
+            'options'     => ['timeout' => 8, 'http_errors' => false],
+            'fulfilled'   => function (ResponseInterface $response) {
+                if ($response->getStatusCode() !== 200) return;
+                foreach ($this->extractLocs((string) $response->getBody()) as $loc) {
+                    if (UrlTools::isSameHost($loc, $this->baseHost)) {
+                        $this->enqueue(UrlTools::normalize($loc));
+                    }
+                }
+            },
+            'rejected' => function () {
+                // Недоступная вложенная карта не должна ломать обход
+            },
+        ]);
+
+        $pool->promise()->wait();
     }
 
-    private function normalizeUrl(string $url): string
+    /** @return string[] адреса из тегов <loc> */
+    private function extractLocs(string $xml): array
     {
-        // Убираем фрагменты и нормализуем
-        $url = strtok($url, '#');
-        return rtrim($url, '/');
+        preg_match_all('/<loc>\s*(https?:\/\/[^<]+)\s*<\/loc>/i', $xml, $m);
+        return array_map('trim', $m[1] ?? []);
     }
 
     public function getBaseUrl(): string { return $this->baseUrl; }
+
+    public function getConcurrency(): int { return $this->concurrency; }
 }

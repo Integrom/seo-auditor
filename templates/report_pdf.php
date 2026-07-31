@@ -258,17 +258,20 @@ p { margin: 0 0 8px; }
 .tz-prio-head.p4 { border-left: 4px solid #94a3b8; }
 .tz-prio-sub { font-size: 8pt; color: #64748b; font-weight: normal; }
 
+/* Вёрстка карточек — таблицами: mPDF ненадёжно обрабатывает float,
+   на разрыве страницы плавающий блок перерисовывался поверх текста */
 .tz-card { margin-bottom: 10px; border: 1px solid #e4e9f0; page-break-inside: avoid; background: #ffffff; }
-.tz-num-row { padding: 8px 14px; display: block; background: #fbfcfe; }
-.tz-num-row.critical { border-left: 3px solid #dc2626; }
-.tz-num-row.warning  { border-left: 3px solid #d97706; }
-.tz-num { font-size: 17pt; font-weight: bold; color: #cbd5e1; float: left; line-height: 1; margin-right: 12px; }
+.tz-head-table { width: 100%; border-collapse: collapse; background: #fbfcfe; }
+.tz-head-table td { padding: 8px 10px; vertical-align: top; border: none; }
+.tz-head-table td.tz-num-cell { width: 34px; text-align: right; padding-right: 4px; }
+.tz-card.critical .tz-head-table { border-left: 3px solid #dc2626; }
+.tz-card.warning  .tz-head-table { border-left: 3px solid #d97706; }
+.tz-num { font-size: 15pt; font-weight: bold; color: #cbd5e1; line-height: 1.1; }
 .tz-num.critical { color: #dc2626; }
 .tz-num.warning  { color: #d97706; }
-.tz-title-wrap { overflow: hidden; }
-.tz-meta-line { font-size: 7.5pt; margin-bottom: 3px; }
+.tz-meta-line { font-size: 7.5pt; margin-bottom: 4px; }
 .tz-title { font-size: 10.5pt; font-weight: bold; color: #0f172a; }
-.tz-body  { padding: 6px 14px 9px 14px; clear: both; }
+.tz-body  { padding: 6px 14px 9px 14px; }
 .tz-desc  { font-size: 9pt; color: #475569; margin-bottom: 6px; }
 .tz-rec   {
     font-size: 9pt; color: #15803d;
@@ -316,12 +319,25 @@ h2 { page-break-after: avoid; }
       <div class="cover-score-lbl"><?= $scoreLabel ?> · /100</div>
     </div>
 
+    <?php
+    // Стили на обложке заданы прямо в разметке: mPDF не применил здесь
+    // вложенные селекторы вида «.cover-stats .crit .snum», и цифры
+    // отрисовывались цветом body — тёмным по тёмному фону
+    $coverStats = [
+        ['#f87171', $cntCrit,                'Критических'],
+        ['#fbbf24', $cntWarn,                'Предупреждений'],
+        ['#60a5fa', $cntInfo,                'Рекомендаций'],
+        ['#a78bfa', '~' . round($totalHours), 'Часов работ'],
+    ];
+    ?>
     <table class="cover-stats">
     <tr>
-      <td class="crit"><span class="snum"><?= $cntCrit ?></span><span class="slbl">Критических</span></td>
-      <td class="warn"><span class="snum"><?= $cntWarn ?></span><span class="slbl">Предупреждений</span></td>
-      <td class="info"><span class="snum"><?= $cntInfo ?></span><span class="slbl">Рекомендаций</span></td>
-      <td class="hours"><span class="snum">~<?= round($totalHours) ?></span><span class="slbl">Часов работ</span></td>
+      <?php foreach ($coverStats as $i => [$color, $value, $label]): ?>
+      <td style="padding:16px 10px; text-align:center; background:#1b2745;<?= $i < 3 ? ' border-right:1px solid #2c3a57;' : '' ?>">
+        <span style="font-size:26pt; font-weight:bold; color:<?= $color ?>; line-height:1;"><?= $value ?></span><br>
+        <span style="font-size:7pt; color:#94a7bd; text-transform:uppercase; letter-spacing:1px;"><?= $label ?></span>
+      </td>
+      <?php endforeach; ?>
     </tr>
     </table>
 
@@ -451,10 +467,10 @@ foreach ($byPriority as $p => $pGroups):
     $urls = array_unique(array_slice($g['urls'], 0, 5));
     $sev  = $rep['severity'];
 ?>
-<div class="tz-card">
-  <div class="tz-num-row <?= $sev ?>">
-    <div class="tz-num <?= $sev ?>"><?= $n++ ?>.</div>
-    <div class="tz-title-wrap">
+<div class="tz-card <?= $sev ?>">
+  <table class="tz-head-table"><tr>
+    <td class="tz-num-cell"><span class="tz-num <?= $sev ?>"><?= $n++ ?>.</span></td>
+    <td>
       <div class="tz-meta-line">
         <span class="badge <?= $sev ?>"><?= $sevLabel[$sev] ?></span>
         <span class="badge prio">влияние: <?= Priority::impactLabel($prio['impact']) ?> · затраты: <?= Priority::effortLabel($prio['effort']) ?></span>
@@ -462,8 +478,8 @@ foreach ($byPriority as $p => $pGroups):
         <?php if ($g['cnt'] > 1): ?><span class="issue-count"><?= $g['cnt'] ?> страниц</span><?php endif; ?>
       </div>
       <div class="tz-title"><?= htmlspecialchars($g['base']) ?></div>
-    </div>
-  </div>
+    </td>
+  </tr></table>
   <div class="tz-body">
     <?php if (!empty($rep['description'])): ?>
       <div class="tz-desc"><?= htmlspecialchars($rep['description']) ?></div>

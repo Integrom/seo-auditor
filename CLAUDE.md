@@ -17,14 +17,13 @@
 
 # Инфраструктура
 
-- **Сервер:** VPS magnit365.ru (109.172.30.103), AlmaLinux 9
-- **URL:** https://seo.magnit365.ru
-- **Корень на сервере:** /var/www/seo.magnit365.ru/
-- **Веб-сервер:** Nginx 1.20.1, PHP-FPM 8.3 (pool: seo-auditor)
-- **БД:** MariaDB 10.11.18 — база `seo_auditor`, пользователь `seo_user`
-- **SSL:** Let's Encrypt (auto-renew)
-- **SSH:** через Posh-SSH в PowerShell (прямой ! ssh не работает без TTY)
-- **Деплой:** файлы в /var/www/seo.magnit365.ru/ через SSH/SCP
+Репозиторий публичный, поэтому конкретные адреса, пути и доступы здесь не приводятся —
+они в `.env` (не версионируется) и в переменных окружения скрипта деплоя.
+
+- **Окружение:** VPS на AlmaLinux 9, Nginx, PHP-FPM, MariaDB, Let's Encrypt
+- **Конфигурация:** всё через `.env`, шаблон — `.env.example`
+- **Деплой:** `deploy.sh`, адрес сервера задаётся переменной `DEPLOY_SERVER`
+- **Проверка окружения:** `php bin/check_env.php`
 
 # Технологический стек
 

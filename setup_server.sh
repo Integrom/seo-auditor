@@ -1,12 +1,18 @@
 #!/bin/bash
-# SEO Аудитор — автонастройка сервера
-# Запуск: ssh root@magnit365.ru 'bash -s' < setup_server.sh
+# SEO Аудитор — автонастройка сервера (AlmaLinux 9 / RHEL-совместимые)
+#
+# Запуск:
+#   DOMAIN=seo.example.ru ADMIN_EMAIL=admin@example.ru \
+#     ssh user@server 'bash -s' < setup_server.sh
+#
+# Пароль базы генерируется случайным и выводится в конце — сохраните его в .env
 
 set -e
-DOMAIN="seo.magnit365.ru"
-WEBROOT="/var/www/seo.magnit365.ru"
-DB_NAME="seo_auditor"
-DB_USER="seo_user"
+DOMAIN="${DOMAIN:-seo.example.ru}"
+WEBROOT="${WEBROOT:-/var/www/$DOMAIN}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@$DOMAIN}"
+DB_NAME="${DB_NAME:-seo_auditor}"
+DB_USER="${DB_USER:-seo_user}"
 DB_PASS=$(openssl rand -base64 16 | tr -d '/+=')
 
 echo "=============================="
@@ -169,9 +175,9 @@ if ! command -v certbot &>/dev/null; then
 fi
 
 if [ "$WEBSERVER" = "nginx" ]; then
-    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email admin@magnit365.ru --redirect
+    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email "$ADMIN_EMAIL" --redirect
 elif [ "$WEBSERVER" = "apache2" ] || [ "$WEBSERVER" = "httpd" ]; then
-    certbot --apache -d "$DOMAIN" --non-interactive --agree-tos --email admin@magnit365.ru --redirect
+    certbot --apache -d "$DOMAIN" --non-interactive --agree-tos --email "$ADMIN_EMAIL" --redirect
 fi
 
 echo "  SSL установлен для $DOMAIN"

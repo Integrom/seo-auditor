@@ -1,17 +1,26 @@
 #!/bin/bash
-# Деплой на seo.magnit365.ru
+# Деплой на боевой сервер
 #
 # Синхронизирует код проекта с сервером. НЕ трогает: .env, vendor/, reports/, logs/ —
 # на сервере они свои. После новых классов пересобирает автолоадер Composer.
 #
-# Запуск:  ./deploy.sh          — только изменённые в git файлы (по сравнению с origin/main)
-#          ./deploy.sh --all    — весь код целиком
+# Запуск:  DEPLOY_SERVER=user@host ./deploy.sh        — изменённые в git файлы
+#          DEPLOY_SERVER=user@host ./deploy.sh --all  — весь код целиком
+#
+# Адрес сервера и путь не зашиты в скрипт: репозиторий публичный.
+# Удобно положить их в ~/.bashrc или задавать при каждом запуске.
 
 set -u
 
-SERVER="${DEPLOY_SERVER:-root@109.172.30.103}"
-REMOTE="${DEPLOY_REMOTE:-/var/www/seo.magnit365.ru}"
+SERVER="${DEPLOY_SERVER:-}"
+REMOTE="${DEPLOY_REMOTE:-/var/www/seo-auditor}"
 LOCAL="$(cd "$(dirname "$0")" && pwd)"
+
+if [ -z "$SERVER" ]; then
+  echo "Не задан адрес сервера. Пример запуска:"
+  echo "  DEPLOY_SERVER=user@example.com DEPLOY_REMOTE=/var/www/seo-auditor ./deploy.sh"
+  exit 1
+fi
 
 echo "=== Деплой SEO-Аудитора → $SERVER ==="
 

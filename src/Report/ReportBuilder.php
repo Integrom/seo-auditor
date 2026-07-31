@@ -61,7 +61,7 @@ class ReportBuilder
 
     public function exportPdf(string $html, string $uuid): string
     {
-        $dir = Config::get('reports_dir', '/var/www/seo.magnit365.ru/reports');
+        $dir = Config::get('reports_dir', dirname(__DIR__, 2) . '/reports');
         if (!is_dir($dir)) mkdir($dir, 0755, true);
 
         $pdfPath = "$dir/$uuid.pdf";

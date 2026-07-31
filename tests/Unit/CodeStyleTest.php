@@ -81,6 +81,89 @@ class CodeStyleTest extends TestCase
         );
     }
 
+    /**
+     * Заголовок скилла — это YAML. Незакавыченное значение с двоеточием и
+     * пробелом (например «Триггеры: ...») парсер читает как вложенный ключ
+     * и отказывается загружать скилл целиком. Ошибка незаметна при чтении,
+     * поэтому проверяем автоматически.
+     */
+    public function testЗаголовкиСкилловКорректны(): void
+    {
+        $root  = dirname(__DIR__, 2);
+        $files = glob("$root/.claude/skills/*/SKILL.md") ?: [];
+
+        if ($files === []) {
+            $this->markTestSkipped('скиллов в проекте нет');
+        }
+
+        $нарушения = [];
+        foreach ($files as $file) {
+            $text = (string) file_get_contents($file);
+            $name = basename(dirname($file));
+
+            if (str_starts_with($text, "\xEF\xBB\xBF")) {
+                $нарушения[] = "$name: файл начинается с BOM — заголовок не распознается";
+                $text = substr($text, 3);
+            }
+            $text = str_replace("\r\n", "\n", $text);
+
+            if (!preg_match("/^---\n(.*?)\n---\n/s", $text, $m)) {
+                $нарушения[] = "$name: не найден YAML-заголовок";
+                continue;
+            }
+
+            foreach ($this->разобратьЗаголовок($m[1], $name) as $проблема) {
+                $нарушения[] = $проблема;
+            }
+        }
+
+        $this->assertSame([], $нарушения, "Ошибки в заголовках скиллов:\n" . implode("\n", $нарушения));
+    }
+
+    /** @return string[] список проблем в YAML-заголовке */
+    private function разобратьЗаголовок(string $frontmatter, string $name): array
+    {
+        $проблемы = [];
+        $вБлоке   = false;
+        $отступ   = 0;
+
+        foreach (explode("\n", $frontmatter) as $i => $line) {
+            $num = $i + 1;
+
+            // Внутри блочного скаляра (>- или |-) двоеточия — обычный текст
+            if ($вБлоке) {
+                $cur = strlen($line) - strlen(ltrim($line));
+                if (trim($line) === '' || $cur > $отступ) continue;
+                $вБлоке = false;
+            }
+
+            if (preg_match('/^(\s*)([A-Za-z0-9_-]+):\s*[>|][-+]?\s*$/u', $line, $mm)) {
+                $вБлоке = true;
+                $отступ = strlen($mm[1]);
+                continue;
+            }
+
+            if (!preg_match('/^(\s*)([A-Za-z0-9_-]+):\s*(.*)$/u', $line, $mm)) {
+                if (trim($line) !== '') $проблемы[] = "$name, строка $num: не похоже на «ключ: значение»";
+                continue;
+            }
+
+            $value = trim($mm[3]);
+            if ($value === '') continue;
+
+            $закавычено = (str_starts_with($value, '"') && str_ends_with($value, '"'))
+                       || (str_starts_with($value, "'") && str_ends_with($value, "'"));
+            if ($закавычено) continue;
+
+            if (preg_match('/:\s/u', $value)) {
+                $проблемы[] = "$name, строка $num: двоеточие с пробелом в незакавыченном значении «{$mm[2]}» — "
+                            . 'возьмите значение в кавычки или используйте блочный скаляр >-';
+            }
+        }
+
+        return $проблемы;
+    }
+
     /** Отладочные функции не должны попадать в рабочий код */
     public function testНетОтладочныхВызовов(): void
     {

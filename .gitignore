@@ -15,9 +15,10 @@
 .phpunit.result.cache
 /coverage/
 
-# Скриншоты и артефакты отладки
-*.png
-*.jpg
+# Скриншоты отладки в корне проекта — в репозиторий не нужны.
+# Иллюстрации для README лежат в docs/screenshots и исключены из правила ниже
+/*.png
+/*.jpg
 /.playwright-mcp/
 
 # Служебные файлы MCP и IDE

@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="SEO-аудитор: как мы собрали его с ИИ-агентом">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#111c33"/>
+      <stop offset="55%" stop-color="#1b2a4a"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0v40" fill="none" stroke="#ffffff" stroke-opacity="0.035" stroke-width="1"/>
+    </pattern>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="26"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <circle cx="1010" cy="300" r="190" fill="#818cf8" opacity="0.16" filter="url(#soft)"/>
+  <rect x="0" y="0" width="1200" height="6" fill="url(#accent)"/>
+
+  <!-- Левая колонка: заголовок -->
+  <g font-family="'Segoe UI',system-ui,-apple-system,sans-serif">
+    <text x="80" y="132" fill="#f97316" font-size="17" font-weight="700" letter-spacing="4.5">SEO И ТЕХНИЧЕСКИЙ АУДИТ САЙТОВ</text>
+
+    <text x="80" y="212" fill="#ffffff" font-size="58" font-weight="800" letter-spacing="-1">Аудит сайта</text>
+    <text x="80" y="280" fill="#ffffff" font-size="58" font-weight="800" letter-spacing="-1">за пять минут</text>
+    <text x="80" y="348" fill="#818cf8" font-size="58" font-weight="800" letter-spacing="-1">вместо трёх часов</text>
+
+    <rect x="80" y="392" width="62" height="4" rx="2" fill="#f97316"/>
+
+    <text x="80" y="446" fill="#c6d2e4" font-size="23">14 групп проверок, отчёт и PDF с планом работ,</text>
+    <text x="80" y="480" fill="#c6d2e4" font-size="23">где задачи разложены по приоритетам и часам</text>
+
+    <text x="80" y="560" fill="#5d7089" font-size="19" font-weight="600" letter-spacing="1.5">INTEGROM.RU</text>
+    <text x="238" y="560" fill="#2c3a57" font-size="19">|</text>
+    <text x="262" y="560" fill="#5d7089" font-size="19">опыт разработки с ИИ-агентом</text>
+  </g>
+
+  <!-- Правая колонка: круг оценки -->
+  <g transform="translate(1010,300)">
+    <circle r="128" fill="#17213c" stroke="#2c3a57" stroke-width="1"/>
+    <circle r="104" fill="none" stroke="#243252" stroke-width="16"/>
+    <!-- Дуга: 78 из 100, начинается сверху -->
+    <circle r="104" fill="none" stroke="#4ade80" stroke-width="16" stroke-linecap="round"
+            stroke-dasharray="509.7 653.5" transform="rotate(-90)"/>
+    <text x="0" y="12" fill="#ffffff" font-size="76" font-weight="800" text-anchor="middle"
+          font-family="'Segoe UI',system-ui,sans-serif">78</text>
+    <text x="0" y="48" fill="#94a7bd" font-size="18" text-anchor="middle" letter-spacing="2.5"
+          font-family="'Segoe UI',system-ui,sans-serif">ИЗ 100</text>
+  </g>
+
+  <!-- Плашки приоритетов -->
+  <g font-family="'Segoe UI',system-ui,sans-serif" font-size="16" font-weight="700" text-anchor="middle">
+    <g transform="translate(866,470)">
+      <rect width="82" height="38" rx="8" fill="#dc2626" opacity="0.22"/>
+      <rect width="82" height="38" rx="8" fill="none" stroke="#dc2626" stroke-opacity="0.5"/>
+      <text x="41" y="25" fill="#fca5a5">P1</text>
+    </g>
+    <g transform="translate(962,470)">
+      <rect width="82" height="38" rx="8" fill="#d97706" opacity="0.22"/>
+      <rect width="82" height="38" rx="8" fill="none" stroke="#d97706" stroke-opacity="0.5"/>
+      <text x="41" y="25" fill="#fbbf24">P2</text>
+    </g>
+    <g transform="translate(1058,470)">
+      <rect width="82" height="38" rx="8" fill="#2563eb" opacity="0.22"/>
+      <rect width="82" height="38" rx="8" fill="none" stroke="#2563eb" stroke-opacity="0.5"/>
+      <text x="41" y="25" fill="#93c5fd">P3</text>
+    </g>
+  </g>
+</svg>

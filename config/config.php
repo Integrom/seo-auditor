@@ -27,7 +27,9 @@ return [
         'from_name' => Env::get('MAIL_FROM_NAME', 'SEO Аудитор'),
     ],
     'crawler' => [
-        'max_pages'   => (int) Env::get('CRAWLER_MAX_PAGES', 500),
+        // 0 — обходить сайт целиком. Ограничение снимает только счётчик страниц:
+        // обход всё равно остановится, если начнёт заканчиваться память
+        'max_pages'   => (int) Env::get('CRAWLER_MAX_PAGES', 0),
         'timeout'     => (int) Env::get('CRAWLER_TIMEOUT', 10),
         // Пауза между волнами параллельных запросов, секунды
         'delay'       => (float) Env::get('CRAWLER_DELAY', 0.2),

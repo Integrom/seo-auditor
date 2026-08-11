@@ -39,7 +39,8 @@ if ($url === '' || in_array($url, ['-h', '--help'], true)) {
 Аргументы:
   url        адрес сайта, например https://example.com
   email      куда отправить отчёт (по умолчанию test@example.com)
-  --pages=N  ограничить обход N страницами (для быстрой проверки)
+  --pages=N  ограничить обход N страницами (для быстрой проверки),
+             --pages=0 — обойти сайт целиком
 
 Пример быстрой проверки:
   php bin/audit.php https://example.com test@example.com --pages=5
@@ -57,16 +58,16 @@ if (!filter_var($url, FILTER_VALIDATE_URL)) {
     exit(1);
 }
 
-// Ограничение числа страниц — только для этого запуска
+// Ограничение числа страниц — только для этого запуска. 0 снимает ограничение
 if (isset($options['pages'])) {
-    $limit = max(1, (int)$options['pages']);
+    $limit = max(0, (int)$options['pages']);
     $ref = new ReflectionClass(Config::class);
     $prop = $ref->getProperty('data');
     $prop->setAccessible(true);
     $data = $prop->getValue();
     $data['crawler']['max_pages'] = $limit;
     $prop->setValue(null, $data);
-    echo "Обход ограничен: $limit страниц\n";
+    echo $limit > 0 ? "Обход ограничен: $limit страниц\n" : "Обход без ограничения по числу страниц\n";
 }
 
 $host = strtolower(parse_url($url, PHP_URL_HOST) ?? '');

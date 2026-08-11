@@ -21,19 +21,30 @@ class Crawler
     private array  $queue   = [];
     private string $baseHost;
     private string $baseUrl;
+    /** 0 или меньше — обходить сайт целиком, без ограничения по числу страниц */
     private int    $maxPages;
     private int    $concurrency;
     private float  $waveDelay;
     private array  $pages = [];
+
+    /** Сколько адресов берём в одну волну, когда лимит страниц не задан */
+    private const WAVE_CAP = 200;
+
+    /** Доля memory_limit, после которой обход останавливается */
+    private const MEMORY_THRESHOLD = 0.8;
+
+    private int    $memoryCeiling = 0;
+    private string $stopReason    = 'сайт обойдён полностью';
 
     /** Время ответа по адресам, заполняется обработчиком статистики Guzzle */
     private array $timings = [];
 
     public function __construct(?int $concurrency = null)
     {
-        $this->maxPages    = (int) Config::get('crawler.max_pages', 100);
+        $this->maxPages    = (int) Config::get('crawler.max_pages', 0);
         $this->concurrency = max(1, $concurrency ?? (int) Config::get('crawler.concurrency', 8));
         $this->waveDelay   = (float) Config::get('crawler.delay', 0.3);
+        $this->memoryCeiling = $this->resolveMemoryCeiling();
 
         $this->client = new Client([
             'timeout'         => Config::get('crawler.timeout', 10),
@@ -65,24 +76,56 @@ class Crawler
         $this->enqueue(UrlTools::normalize($startUrl));
         $this->seedFromSitemap();
 
-        while (!empty($this->queue) && count($this->pages) < $this->maxPages) {
+        while (!empty($this->queue) && $this->hasCapacity()) {
             $wave = $this->takeWave();
             if (empty($wave)) break;
 
             $this->fetchWave($wave, $onPage);
 
-            if ($this->waveDelay > 0 && !empty($this->queue) && count($this->pages) < $this->maxPages) {
+            if ($this->waveDelay > 0 && !empty($this->queue) && $this->hasCapacity()) {
                 usleep((int) ($this->waveDelay * 1_000_000));
             }
+        }
+
+        if (!empty($this->queue) && $this->stopReason === 'сайт обойдён полностью') {
+            $this->stopReason = 'обход прерван, в очереди осталось ' . count($this->queue) . ' адресов';
         }
 
         return $this->pages;
     }
 
+    /**
+     * Можно ли продолжать обход.
+     *
+     * Ограничение по числу страниц может быть снято (max_pages = 0), но память
+     * не бесконечна: HTML всех страниц хранится в массиве до конца аудита,
+     * поэтому обход останавливается, не доводя процесс до аварийного завершения.
+     */
+    private function hasCapacity(): bool
+    {
+        if ($this->maxPages > 0 && count($this->pages) >= $this->maxPages) {
+            $this->stopReason = "достигнут лимит в {$this->maxPages} страниц";
+            return false;
+        }
+
+        if ($this->memoryCeiling > 0 && memory_get_usage(true) >= $this->memoryCeiling) {
+            $used = round(memory_get_usage(true) / 1048576);
+            $this->stopReason = "обход остановлен на " . count($this->pages)
+                              . " странице: израсходована память ({$used} МБ)";
+            error_log('[Crawler] ' . $this->stopReason);
+            return false;
+        }
+
+        return true;
+    }
+
     /** Берёт из очереди следующую волну, не превышая остаток лимита страниц */
     private function takeWave(): array
     {
-        $capacity = $this->maxPages - count($this->pages);
+        $capacity = $this->maxPages > 0
+            ? min(self::WAVE_CAP, $this->maxPages - count($this->pages))
+            : self::WAVE_CAP;
+
         if ($capacity <= 0) return [];
 
         $wave = [];
@@ -139,7 +182,7 @@ class Crawler
         // Порядок обхода сохраняем: сначала стартовая страница, дальше по очереди
         foreach ($urls as $url) {
             if (!isset($results[$url])) continue;
-            if (count($this->pages) >= $this->maxPages) break;
+            if ($this->maxPages > 0 && count($this->pages) >= $this->maxPages) break;
 
             $page = $results[$url];
             $this->pages[] = $page;
@@ -327,4 +370,31 @@ class Crawler
     public function getBaseUrl(): string { return $this->baseUrl; }
 
     public function getConcurrency(): int { return $this->concurrency; }
+
+    /** Почему обход завершился — для отчёта и логов */
+    public function getStopReason(): string { return $this->stopReason; }
+
+    /** Сколько адресов осталось необойдёнными */
+    public function getQueueSize(): int { return count($this->queue); }
+
+    /**
+     * Порог памяти, после которого обход прекращается.
+     * Возвращает 0, если memory_limit не задан — тогда проверка не нужна.
+     */
+    private function resolveMemoryCeiling(): int
+    {
+        $limit = trim((string) ini_get('memory_limit'));
+        if ($limit === '' || $limit === '-1') return 0;
+
+        $unit  = strtolower(substr($limit, -1));
+        $value = (int) $limit;
+        $bytes = match ($unit) {
+            'g'     => $value * 1024 * 1024 * 1024,
+            'm'     => $value * 1024 * 1024,
+            'k'     => $value * 1024,
+            default => $value,
+        };
+
+        return $bytes > 0 ? (int) ($bytes * self::MEMORY_THRESHOLD) : 0;
+    }
 }

@@ -62,7 +62,7 @@ class AuditManager
                 ]);
                 Database::update('audits', [
                     'pages_crawled' => $n,
-                    'progress'      => min(30, 5 + (int)($n / max(1, Config::get('crawler.max_pages', 100)) * 25)),
+                    'progress'      => $this->crawlProgress($n),
                     'progress_text' => "Обход сайта: $n страниц...",
                 ], 'id = :id', [':id' => $this->auditId]);
             });
@@ -75,7 +75,10 @@ class AuditManager
 
             // ── 2. Проверки ────────────────────────────────────────────────
             $this->setStatus('checking');
-            $siteData  = [];
+            $siteData  = [
+                'crawl_stop_reason' => $crawler->getStopReason(),
+                'crawl_queue_left'  => $crawler->getQueueSize(),
+            ];
             $allIssues = [];
 
             $checks = [
@@ -103,6 +106,22 @@ class AuditManager
                 } catch (\Exception $e) {
                     error_log("Check $label failed: " . $e->getMessage());
                 }
+            }
+
+            // Обход мог прерваться, не дойдя до конца сайта — говорим об этом прямо,
+            // иначе неполный аудит выглядит полным
+            if (($siteData['crawl_queue_left'] ?? 0) > 0) {
+                $allIssues[] = [
+                    'check_type'     => 'technical',
+                    'severity'       => 'warning',
+                    'title'          => 'Сайт обойдён не полностью',
+                    'description'    => $crawler->getStopReason() . '. Проверено страниц: ' . count($pages)
+                                      . ', не обойдено: ' . $crawler->getQueueSize() . '.',
+                    'recommendation' => 'Результаты относятся только к проверенным страницам. '
+                                      . 'Увеличьте memory_limit для PHP или задайте CRAWLER_MAX_PAGES, '
+                                      . 'чтобы обойти сайт частями.',
+                    'url'            => $this->url,
+                ];
             }
 
             // ── 3. Сохраняем проблемы + ключи для сравнения ───────────────
@@ -173,6 +192,25 @@ class AuditManager
             ], 'id = :id', [':id' => $this->auditId]);
             throw $e;
         }
+    }
+
+    /**
+     * Прогресс фазы обхода: от 5 до 30 процентов.
+     *
+     * Когда лимит страниц задан, считаем долю от него. Когда лимита нет,
+     * общее число страниц заранее неизвестно, поэтому шкала приближается
+     * к 30 асимптотически — полоса растёт, но не упирается в потолок раньше
+     * времени и не откатывается назад.
+     */
+    private function crawlProgress(int $crawled): int
+    {
+        $limit = (int) Config::get('crawler.max_pages', 0);
+
+        $share = $limit > 0
+            ? min(1.0, $crawled / $limit)
+            : $crawled / ($crawled + 300);
+
+        return min(30, 5 + (int) round($share * 25));
     }
 
     // Ключи проблем из предыдущего аудита

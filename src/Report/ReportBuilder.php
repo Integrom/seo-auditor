@@ -69,15 +69,16 @@ class ReportBuilder
         $html    = preg_replace('/<script\b[^>]*>[\s\S]*?<\/script>/i', '', $html);
 
         try {
-            $mpdf = new \Mpdf\Mpdf([
+            $mpdf = new \Mpdf\Mpdf(array_merge([
                 'mode'          => 'utf-8',
                 'format'        => 'A4',
-                'margin_top'    => 15,
-                'margin_right'  => 10,
-                'margin_bottom' => 15,
-                'margin_left'   => 10,
+                'margin_top'    => 18,
+                'margin_right'  => 14,
+                'margin_bottom' => 18,
+                'margin_left'   => 14,
                 'tempDir'       => sys_get_temp_dir(),
-            ]);
+            ], $this->fontConfig()));
+
             $mpdf->SetDisplayMode('fullpage');
             $mpdf->autoScriptToLang = true;
             $mpdf->autoLangToFont   = true;
@@ -89,6 +90,35 @@ class ReportBuilder
         }
 
         return $pdfPath;
+    }
+
+    /**
+     * Шрифты отчёта для mPDF. Он понимает только TrueType, поэтому рядом
+     * с веб-версиями (woff2) лежат ttf. Если файлов нет, возвращаем пустую
+     * настройку — mPDF возьмёт встроенный шрифт, отчёт соберётся всё равно.
+     */
+    private function fontConfig(): array
+    {
+        $dir      = dirname(__DIR__, 2) . '/resources/fonts';
+        $required = ['Oswald-Medium.ttf', 'Oswald-SemiBold.ttf', 'IBMPlexSans-Regular.ttf', 'IBMPlexSans-SemiBold.ttf'];
+
+        foreach ($required as $file) {
+            if (!is_file("$dir/$file")) {
+                error_log("[PDF] нет шрифта $file, использую встроенный");
+                return [];
+            }
+        }
+
+        $default = (new \Mpdf\Config\FontVariables())->getDefaults()['fontdata'];
+
+        return [
+            'fontDir'      => array_merge((new \Mpdf\Config\ConfigVariables())->getDefaults()['fontDir'], [$dir]),
+            'fontdata'     => $default + [
+                'oswald' => ['R' => 'Oswald-Medium.ttf',       'B' => 'Oswald-SemiBold.ttf'],
+                'plex'   => ['R' => 'IBMPlexSans-Regular.ttf', 'B' => 'IBMPlexSans-SemiBold.ttf'],
+            ],
+            'default_font' => 'plex',
+        ];
     }
 
     public function getScoreColor(int $score): string

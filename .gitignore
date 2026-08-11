@@ -32,3 +32,6 @@ run-context7-mcp.ps1
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Шрифты для PDF (resources/fonts) и веба (public/assets/fonts) версионируются:
+# без них отчёт теряет оформление, а тянуть их с CDN нельзя из-за ФЗ-152
